@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Dict
 
+from .exploit import AuthorizationError, ExploitConfig, LfiExploit
 from .scanner import LfiScanner, ScanConfig
 
 
@@ -32,18 +33,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-requests", type=int, default=50, help="Maximum payload requests to send")
     parser.add_argument("--output", default=None, help="Optional output JSON report path")
     parser.add_argument("--concurrency", type=int, default=5, help="Worker thread count (default: 5)")
+    parser.add_argument("--exploit", action="store_true", help="Send one explicit payload instead of scanner corpus")
+    parser.add_argument("--payload", default=None, help="Payload to use in exploit mode")
+    parser.add_argument(
+        "--i-have-authorization",
+        action="store_true",
+        help="Required gate for exploit mode. You must have explicit written permission.",
+    )
     return parser
 
 
-def main() -> int:
-    parser = build_parser()
-    args = parser.parse_args()
-
-    try:
-        headers = _parse_headers(args.headers)
-    except ValueError as exc:
-        parser.error(str(exc))
-
+def _run_scan(args: argparse.Namespace, headers: Dict[str, str]) -> int:
     config = ScanConfig(
         url=args.url,
         param=args.param,
@@ -79,6 +79,53 @@ def main() -> int:
         print(f"\n[+] JSON report written to {output_path}")
 
     return 0
+
+
+def _run_exploit(args: argparse.Namespace, headers: Dict[str, str], parser: argparse.ArgumentParser) -> int:
+    if not args.payload:
+        parser.error("--payload is required when --exploit is set")
+
+    config = ExploitConfig(
+        url=args.url,
+        param=args.param,
+        payload=args.payload,
+        method=args.method,
+        headers=headers,
+        cookie=args.cookie,
+        timeout=args.timeout,
+        authorized=args.i_have_authorization,
+    )
+
+    exploit = LfiExploit(config)
+    try:
+        report = exploit.run()
+    except AuthorizationError as exc:
+        parser.error(str(exc))
+
+    print(f"[+] Exploit request sent. Status: {report['response']['status_code']}")
+    print(f"[+] Reproduction: {report['request']['curl']}")
+
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        print(f"[+] Exploit report written to {output_path}")
+
+    return 0
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    try:
+        headers = _parse_headers(args.headers)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    if args.exploit:
+        return _run_exploit(args, headers, parser)
+    return _run_scan(args, headers)
 
 
 if __name__ == "__main__":

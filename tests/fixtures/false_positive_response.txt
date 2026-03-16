@@ -1,0 +1,6 @@
+<html>
+<body>
+This page discusses Linux account files but does not expose real credentials.
+Example template text: root x 0 0 and fake paths like /user/docs/example should not match strong signatures.
+</body>
+</html>
