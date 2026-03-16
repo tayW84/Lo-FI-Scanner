@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from .exploit import AuthorizationError, ExploitConfig, LfiExploit
 from .scanner import LfiScanner, ScanConfig
@@ -38,6 +38,24 @@ def _load_wordlist(path: str) -> List[str]:
     return values
 
 
+
+
+def _load_payload_wordlist(path: str, prefix: str = "", suffix: str = "") -> List[Tuple[str, str]]:
+    wordlist_path = Path(path)
+    if not wordlist_path.exists():
+        raise ValueError(f"Payload wordlist does not exist: {wordlist_path}")
+
+    payloads: List[Tuple[str, str]] = []
+    for line in wordlist_path.read_text(encoding="utf-8").splitlines():
+        candidate = line.strip()
+        if not candidate or candidate.startswith("#"):
+            continue
+        payloads.append((f"{prefix}{candidate}{suffix}", "custom-wordlist"))
+
+    if not payloads:
+        raise ValueError(f"Payload wordlist is empty: {wordlist_path}")
+    return payloads
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Lo-FI Scanner - Local File Inclusion scanner")
     parser.add_argument("--url", required=True, help="Target endpoint URL")
@@ -50,6 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rate-limit", type=float, default=5.0, help="Requests per second")
     parser.add_argument("--output", default=None, help="Optional output JSON report path")
     parser.add_argument("--concurrency", type=int, default=5, help="Worker thread count (default: 5)")
+    parser.add_argument("--payload-wordlist", default=None, help="Path to newline-delimited LFI payloads to test in scan mode")
+    parser.add_argument("--payload-prefix", default="", help="Optional prefix prepended to each --payload-wordlist entry")
+    parser.add_argument("--payload-suffix", default="", help="Optional suffix appended to each --payload-wordlist entry")
     parser.add_argument("--exploit", action="store_true", help="Send one explicit payload instead of scanner corpus")
     parser.add_argument("--payload", default=None, help="Payload to use in exploit mode")
     parser.add_argument(
@@ -76,6 +97,10 @@ def _resolve_scan_params(args: argparse.Namespace, parser: argparse.ArgumentPars
 
 def _run_scan(args: argparse.Namespace, headers: Dict[str, str], parser: argparse.ArgumentParser) -> int:
     param, candidate_params = _resolve_scan_params(args, parser)
+    payload_items = None
+    if args.payload_wordlist:
+        payload_items = _load_payload_wordlist(args.payload_wordlist, args.payload_prefix, args.payload_suffix)
+
     config = ScanConfig(
         url=args.url,
         param=param,
@@ -86,6 +111,7 @@ def _run_scan(args: argparse.Namespace, headers: Dict[str, str], parser: argpars
         timeout=args.timeout,
         rate_limit=args.rate_limit,
         concurrency=args.concurrency,
+        payload_items=payload_items,
     )
 
     report = LfiScanner(config).run()
@@ -118,6 +144,8 @@ def _run_exploit(args: argparse.Namespace, headers: Dict[str, str], parser: argp
         parser.error("--param is required when --exploit is set")
     if args.param_wordlist:
         parser.error("--param-wordlist is not supported with --exploit")
+    if args.payload_wordlist:
+        parser.error("--payload-wordlist is not supported with --exploit")
     if not args.payload:
         parser.error("--payload is required when --exploit is set")
 

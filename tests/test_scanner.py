@@ -93,3 +93,32 @@ def test_candidate_params_are_scanned_from_config():
     assert report["total_payloads"] == 2
     assert len(report["findings"]) == 1
     assert report["findings"][0]["param"] == "page"
+
+
+def test_custom_payload_items_override_builtin_payloads():
+    seen_payloads = []
+
+    def responder(request, _timeout):
+        parsed = urlsplit(request.full_url)
+        payload_value = parse_qs(parsed.query)["file"][0]
+        seen_payloads.append(payload_value)
+        return 200, _fixture("false_positive_response.txt")
+
+    scanner = LfiScanner(
+        ScanConfig(
+            url="https://target.local/view",
+            param="file",
+            method="GET",
+            concurrency=1,
+            retries=0,
+            rate_limit=0,
+            payload_items=[("../../../../etc/hosts", "custom-wordlist")],
+        )
+    )
+
+    with URLOpenMock("lofi_scanner.scanner.urlopen", responder):
+        report = scanner.run()
+
+    assert report["total_payloads"] == 1
+    assert seen_payloads == ["../../../../etc/hosts"]
+    assert report["results"][0]["payload_set"] == "custom-wordlist"
