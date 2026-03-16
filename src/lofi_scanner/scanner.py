@@ -7,7 +7,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -31,6 +31,7 @@ class ScanConfig:
     concurrency: int = 5
     retries: int = 2
     backoff_base: float = 0.5
+    payload_items: Optional[List[Tuple[str, str]]] = None
 
 
 class LfiScanner:
@@ -140,7 +141,7 @@ class LfiScanner:
 
     def run(self) -> dict:
         params = self.config.candidate_params or [self.config.param]
-        payload_items = list(iter_payloads())
+        payload_items = list(self.config.payload_items or iter_payloads())
         attempts = [(param, payload, payload_set) for param in params for payload, payload_set in payload_items]
         results: List[dict] = []
 
