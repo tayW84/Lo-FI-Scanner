@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 
 from .exploit import AuthorizationError, ExploitConfig, LfiExploit
 from .scanner import LfiScanner, ScanConfig
@@ -21,10 +21,28 @@ def _parse_headers(header_values: list[str]) -> Dict[str, str]:
     return headers
 
 
+def _load_wordlist(path: str) -> List[str]:
+    wordlist_path = Path(path)
+    if not wordlist_path.exists():
+        raise ValueError(f"Parameter wordlist does not exist: {wordlist_path}")
+
+    values: List[str] = []
+    for line in wordlist_path.read_text(encoding="utf-8").splitlines():
+        candidate = line.strip()
+        if not candidate or candidate.startswith("#"):
+            continue
+        values.append(candidate)
+
+    if not values:
+        raise ValueError(f"Parameter wordlist is empty: {wordlist_path}")
+    return values
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Lo-FI Scanner - Local File Inclusion scanner")
     parser.add_argument("--url", required=True, help="Target endpoint URL")
-    parser.add_argument("--param", required=True, help="Potentially vulnerable parameter name")
+    parser.add_argument("--param", default=None, help="Potentially vulnerable parameter name")
+    parser.add_argument("--param-wordlist", default=None, help="Path to newline-delimited parameter names to test")
     parser.add_argument("--method", choices=["GET", "POST"], default="GET", help="HTTP method")
     parser.add_argument("--headers", action="append", default=[], help="Repeatable header in 'Key: Value' format")
     parser.add_argument("--cookie", default=None, help="Raw Cookie header value")
@@ -43,10 +61,26 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_scan(args: argparse.Namespace, headers: Dict[str, str]) -> int:
+def _resolve_scan_params(args: argparse.Namespace, parser: argparse.ArgumentParser) -> tuple[str, List[str] | None]:
+    candidate_params: List[str] = []
+    if args.param:
+        candidate_params.append(args.param)
+    if args.param_wordlist:
+        candidate_params.extend(_load_wordlist(args.param_wordlist))
+
+    unique_params = list(dict.fromkeys(candidate_params))
+    if not unique_params:
+        parser.error("scan mode requires --param and/or --param-wordlist")
+
+    return unique_params[0], unique_params
+
+
+def _run_scan(args: argparse.Namespace, headers: Dict[str, str], parser: argparse.ArgumentParser) -> int:
+    param, candidate_params = _resolve_scan_params(args, parser)
     config = ScanConfig(
         url=args.url,
-        param=args.param,
+        param=param,
+        candidate_params=candidate_params,
         method=args.method,
         headers=headers,
         cookie=args.cookie,
@@ -67,8 +101,8 @@ def _run_scan(args: argparse.Namespace, headers: Dict[str, str]) -> int:
         for index, finding in enumerate(findings[:10], start=1):
             hit_names = ", ".join(hit["name"] for hit in finding["signature_hits"]) or "none"
             print(
-                f"  {index}. payload={finding['payload']!r} status={finding['status_code']} "
-                f"confidence={finding['confidence']} signatures={hit_names}"
+                f"  {index}. param={finding['param']!r} payload={finding['payload']!r} "
+                f"status={finding['status_code']} confidence={finding['confidence']} signatures={hit_names}"
             )
             print(f"     poc: {finding['poc_request']}")
 
@@ -82,6 +116,10 @@ def _run_scan(args: argparse.Namespace, headers: Dict[str, str]) -> int:
 
 
 def _run_exploit(args: argparse.Namespace, headers: Dict[str, str], parser: argparse.ArgumentParser) -> int:
+    if not args.param:
+        parser.error("--param is required when --exploit is set")
+    if args.param_wordlist:
+        parser.error("--param-wordlist is not supported with --exploit")
     if not args.payload:
         parser.error("--payload is required when --exploit is set")
 
@@ -123,9 +161,12 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
 
-    if args.exploit:
-        return _run_exploit(args, headers, parser)
-    return _run_scan(args, headers)
+    try:
+        if args.exploit:
+            return _run_exploit(args, headers, parser)
+        return _run_scan(args, headers, parser)
+    except ValueError as exc:
+        parser.error(str(exc))
 
 
 if __name__ == "__main__":
