@@ -34,6 +34,7 @@ The package installs the `lofi-scanner` console command via `pyproject.toml`.
 lofi-scanner \
   --url "https://example.com/download" \
   --param "file" \
+  --param-wordlist params.txt \
   --method GET \
   --max-requests 20 \
   --rate-limit 3 \
@@ -42,10 +43,27 @@ lofi-scanner \
 
 What this does:
 
-1. injects built-in LFI payloads into `file`
+1. injects built-in LFI payloads into one or more parameters (`--param` and/or `--param-wordlist`)
 2. sends requests with retry/backoff behavior for transient server errors
 3. applies response signatures (e.g., `/etc/passwd`, Windows INI markers)
 4. writes findings and full per-payload results to JSON
+
+
+## Parameter discovery with a wordlist
+
+Use `--param-wordlist` to test multiple potential parameter names in scan mode.
+
+- The wordlist format is one parameter per line.
+- Empty lines and lines starting with `#` are ignored.
+- You can combine `--param` and `--param-wordlist`; duplicates are automatically removed.
+
+```bash
+lofi-scanner \
+  --url "https://example.com/download" \
+  --param "file" \
+  --param-wordlist params.txt \
+  --max-requests 40
+```
 
 ## Exploit mode example (legal warning)
 
@@ -77,6 +95,7 @@ Exploit mode sends one controlled request and returns:
   "config": {
     "url": "string",
     "param": "string",
+    "candidate_params": ["string"],
     "method": "GET|POST",
     "headers": {"string": "string"},
     "cookie": "string|null",
@@ -91,6 +110,7 @@ Exploit mode sends one controlled request and returns:
   "findings": [
     {
       "payload": "string",
+      "param": "string",
       "payload_set": "string",
       "method": "GET|POST",
       "url": "string",

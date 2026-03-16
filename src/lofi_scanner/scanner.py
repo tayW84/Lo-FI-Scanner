@@ -22,6 +22,7 @@ TRANSIENT_STATUS = {429, 500, 502, 503, 504}
 class ScanConfig:
     url: str
     param: str
+    candidate_params: Optional[List[str]] = None
     method: str = "GET"
     headers: Optional[Dict[str, str]] = None
     cookie: Optional[str] = None
@@ -53,16 +54,16 @@ class LfiScanner:
                 time.sleep(min_interval - elapsed)
             self._last_request_at = time.monotonic()
 
-    def _inject_payload(self, payload: str) -> tuple[str, Dict[str, str], Optional[str]]:
+    def _inject_payload(self, param: str, payload: str) -> tuple[str, Dict[str, str], Optional[str]]:
         method = self.config.method.upper()
         if method == "GET":
             parts = urlsplit(self.config.url)
             query = dict(parse_qsl(parts.query, keep_blank_values=True))
-            query[self.config.param] = payload
+            query[param] = payload
             updated_url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query, doseq=True), parts.fragment))
             return updated_url, {}, self._build_poc_request(updated_url, None)
 
-        data = {self.config.param: payload}
+        data = {param: payload}
         return self.config.url, data, self._build_poc_request(self.config.url, data)
 
     def _build_poc_request(self, url: str, data: Optional[Dict[str, str]]) -> str:
@@ -104,8 +105,8 @@ class LfiScanner:
             raise last_error
         raise RuntimeError("Unexpected request state")
 
-    def _scan_payload(self, payload: str, payload_set: str) -> dict:
-        url, data, poc = self._inject_payload(payload)
+    def _scan_payload(self, param: str, payload: str, payload_set: str) -> dict:
+        url, data, poc = self._inject_payload(param, payload)
         try:
             status_code, body = self._send_with_retries(url, data)
             hits = match_signatures(body)
@@ -113,6 +114,7 @@ class LfiScanner:
             snippet = body[:300].replace("\n", "\\n")
             return {
                 "payload": payload,
+                "param": param,
                 "payload_set": payload_set,
                 "method": self.config.method.upper(),
                 "url": url,
@@ -125,6 +127,7 @@ class LfiScanner:
         except Exception as exc:
             return {
                 "payload": payload,
+                "param": param,
                 "payload_set": payload_set,
                 "method": self.config.method.upper(),
                 "url": url,
@@ -137,11 +140,17 @@ class LfiScanner:
             }
 
     def run(self) -> dict:
-        payload_items = list(iter_payloads())[: self.config.max_requests]
+        params = self.config.candidate_params or [self.config.param]
+        payload_items = list(iter_payloads())
+        attempts = [(param, payload, payload_set) for param in params for payload, payload_set in payload_items][
+            : self.config.max_requests
+        ]
         results: List[dict] = []
 
         with ThreadPoolExecutor(max_workers=max(1, self.config.concurrency)) as executor:
-            futures = [executor.submit(self._scan_payload, payload, payload_set) for payload, payload_set in payload_items]
+            futures = [
+                executor.submit(self._scan_payload, param, payload, payload_set) for param, payload, payload_set in attempts
+            ]
             for future in as_completed(futures):
                 results.append(future.result())
 
@@ -152,7 +161,7 @@ class LfiScanner:
         )
         return {
             "config": asdict(self.config),
-            "total_payloads": len(payload_items),
+            "total_payloads": len(attempts),
             "findings": findings,
             "results": results,
         }
