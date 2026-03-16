@@ -145,12 +145,18 @@ class LfiScanner:
         attempts = [(param, payload, payload_set) for param in params for payload, payload_set in payload_items]
         results: List[dict] = []
 
-        with ThreadPoolExecutor(max_workers=max(1, self.config.concurrency)) as executor:
-            futures = [
-                executor.submit(self._scan_payload, param, payload, payload_set) for param, payload, payload_set in attempts
-            ]
+        executor = ThreadPoolExecutor(max_workers=max(1, self.config.concurrency))
+        futures = [executor.submit(self._scan_payload, param, payload, payload_set) for param, payload, payload_set in attempts]
+        try:
             for future in as_completed(futures):
                 results.append(future.result())
+        except KeyboardInterrupt:
+            for future in futures:
+                future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            executor.shutdown(wait=True)
 
         findings = sorted(
             [r for r in results if r.get("confidence", 0) > 0],
