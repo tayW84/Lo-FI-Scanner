@@ -122,3 +122,56 @@ def test_custom_payload_items_override_builtin_payloads():
     assert report["total_payloads"] == 1
     assert seen_payloads == ["../../../../etc/hosts"]
     assert report["results"][0]["payload_set"] == "custom-wordlist"
+
+
+def test_keyboard_interrupt_cancels_pending_futures():
+    class DummyFuture:
+        def __init__(self):
+            self.cancelled = False
+
+        def cancel(self):
+            self.cancelled = True
+
+    class DummyExecutor:
+        instance = None
+
+        def __init__(self, max_workers):
+            self.max_workers = max_workers
+            self.futures = []
+            self.shutdown_calls = []
+            DummyExecutor.instance = self
+
+        def submit(self, fn, *args):
+            future = DummyFuture()
+            self.futures.append(future)
+            return future
+
+        def shutdown(self, wait=True, cancel_futures=False):
+            self.shutdown_calls.append((wait, cancel_futures))
+
+    scanner = LfiScanner(
+        ScanConfig(
+            url="https://target.local/view",
+            param="file",
+            method="GET",
+            concurrency=2,
+            retries=0,
+            rate_limit=0,
+        )
+    )
+
+    with patch("lofi_scanner.scanner.iter_payloads", return_value=iter([('a', 'test'), ('b', 'test')])):
+        with patch("lofi_scanner.scanner.ThreadPoolExecutor", DummyExecutor):
+            with patch("lofi_scanner.scanner.as_completed", side_effect=KeyboardInterrupt):
+                with patch.object(scanner, "_scan_payload", return_value={}):
+                    try:
+                        scanner.run()
+                    except KeyboardInterrupt:
+                        pass
+                    else:
+                        raise AssertionError("Expected KeyboardInterrupt")
+
+    executor = DummyExecutor.instance
+    assert executor is not None
+    assert executor.shutdown_calls == [(False, True)]
+    assert all(future.cancelled for future in executor.futures)
