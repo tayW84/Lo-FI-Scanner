@@ -28,7 +28,6 @@ class ScanConfig:
     cookie: Optional[str] = None
     timeout: float = 10.0
     rate_limit: float = 5.0
-    max_requests: int = 50
     concurrency: int = 5
     retries: int = 2
     backoff_base: float = 0.5
@@ -142,9 +141,7 @@ class LfiScanner:
     def run(self) -> dict:
         params = self.config.candidate_params or [self.config.param]
         payload_items = list(iter_payloads())
-        attempts = [(param, payload, payload_set) for param in params for payload, payload_set in payload_items][
-            : self.config.max_requests
-        ]
+        attempts = [(param, payload, payload_set) for param in params for payload, payload_set in payload_items]
         results: List[dict] = []
 
         with ThreadPoolExecutor(max_workers=max(1, self.config.concurrency)) as executor:

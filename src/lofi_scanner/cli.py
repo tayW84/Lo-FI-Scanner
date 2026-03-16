@@ -48,7 +48,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cookie", default=None, help="Raw Cookie header value")
     parser.add_argument("--timeout", type=float, default=10.0, help="Request timeout in seconds")
     parser.add_argument("--rate-limit", type=float, default=5.0, help="Requests per second")
-    parser.add_argument("--max-requests", type=int, default=50, help="Maximum payload requests to send")
     parser.add_argument("--output", default=None, help="Optional output JSON report path")
     parser.add_argument("--concurrency", type=int, default=5, help="Worker thread count (default: 5)")
     parser.add_argument("--exploit", action="store_true", help="Send one explicit payload instead of scanner corpus")
@@ -86,7 +85,6 @@ def _run_scan(args: argparse.Namespace, headers: Dict[str, str], parser: argpars
         cookie=args.cookie,
         timeout=args.timeout,
         rate_limit=args.rate_limit,
-        max_requests=args.max_requests,
         concurrency=args.concurrency,
     )
 

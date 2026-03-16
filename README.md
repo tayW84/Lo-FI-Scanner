@@ -36,7 +36,6 @@ lofi-scanner \
   --param "file" \
   --param-wordlist params.txt \
   --method GET \
-  --max-requests 20 \
   --rate-limit 3 \
   --output report.scan.json
 ```
@@ -62,7 +61,6 @@ lofi-scanner \
   --url "https://example.com/download" \
   --param "file" \
   --param-wordlist params.txt \
-  --max-requests 40
 ```
 
 ## Exploit mode example (legal warning)
@@ -101,12 +99,11 @@ Exploit mode sends one controlled request and returns:
     "cookie": "string|null",
     "timeout": 10.0,
     "rate_limit": 5.0,
-    "max_requests": 50,
     "concurrency": 5,
     "retries": 2,
     "backoff_base": 0.5
   },
-  "total_payloads": 50,
+  "total_payloads": 120,
   "findings": [
     {
       "payload": "string",
